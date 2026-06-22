@@ -1,7 +1,7 @@
 /* ─── Config — replace these two values ──────────────────────── */
 var CONFIG = {
-  CLIENT_ID:        'YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com',
-  CALENDAR_ID:      'YOUR_CALENDAR_ID_HERE',
+  CLIENT_ID:        '235751329614-igv6su08k8v2je8fenccts0qc0184mgv.apps.googleusercontent.com',
+  CALENDAR_ID:      'qilahludba@gmail.com',
   DURATION_MINUTES: 60,
   TIMEZONE:         'Asia/Colombo',
 };
