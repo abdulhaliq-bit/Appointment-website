@@ -469,6 +469,24 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+/* ─── Date fully booked notice ────────────────────────────────── */
+.date-full-notice {
+  background: #fdf0ef;
+  border: 1px solid #f5c4b3;
+  border-radius: var(--radius-xs);
+  color: var(--error);
+  font-size: 13px;
+  font-weight: 500;
+  padding: 9px 13px;
+  margin-top: 10px;
+  display: none;
+}
+
+/* ─── Disabled / unavailable time slot options ─────────────────── */
+select option:disabled {
+  color: #aaa;
+}
+
 /* ─── Toast notification ──────────────────────────────────────── */
 .toast {
   position: fixed;
