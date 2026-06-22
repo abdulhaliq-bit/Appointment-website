@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Book an Appointment</title>
+  <link rel="stylesheet" href="style.css" />
+  <!-- Google Identity Services (loaded silently for OAuth) -->
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+</head>
+<body>
+
+  <div class="page">
+
+    <!-- Brand header -->
+    <div class="brand">
+      <div class="brand-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="4" width="18" height="18" rx="2"/>
+          <line x1="16" y1="2" x2="16" y2="6"/>
+          <line x1="8" y1="2" x2="8" y2="6"/>
+          <line x1="3" y1="10" x2="21" y2="10"/>
+        </svg>
+      </div>
+      <h1>Book an Appointment</h1>
+      <p>Fill in your details and pick a time that works for you</p>
+    </div>
+
+    <!-- Main card -->
+    <div class="card">
+
+      <!-- Step progress indicator (hidden on step 4) -->
+      <div id="steps-wrapper" class="steps-wrapper">
+        <div class="steps-row">
+          <div class="step-dot active" id="sd1">1</div>
+          <div class="step-line" id="sl1"></div>
+          <div class="step-dot idle" id="sd2">2</div>
+          <div class="step-line" id="sl2"></div>
+          <div class="step-dot idle" id="sd3">3</div>
+        </div>
+        <div class="steps-labels">
+          <span class="active-lbl" id="sl-1">Details</span>
+          <span id="sl-2">Date &amp; time</span>
+          <span id="sl-3">Review</span>
+        </div>
+      </div>
+
+      <!-- ─── Step 1: Your details ─────────────────────────────── -->
+      <div id="step1">
+        <div class="section-title">Your details</div>
+        <p class="section-sub">Tell us a bit about you and your property.</p>
+
+        <div class="field">
+          <label for="f-name">Full name</label>
+          <input id="f-name" type="text" autocomplete="name" placeholder="e.g. Sarah Ahmed" />
+          <div class="err-msg" id="e-name">Please enter your full name.</div>
+        </div>
+
+        <div class="row">
+          <div class="field">
+            <label for="f-phone">Phone number</label>
+            <input id="f-phone" type="tel" autocomplete="tel" placeholder="+94 77 123 4567" />
+            <div class="err-msg" id="e-phone">Please enter a valid phone number.</div>
+          </div>
+          <div class="field">
+            <label for="f-email">Email address</label>
+            <input id="f-email" type="email" autocomplete="email" placeholder="you@example.com" />
+            <div class="err-msg" id="e-email">Please enter a valid email address.</div>
+          </div>
+        </div>
+
+        <div class="field">
+          <label>Property type</label>
+          <div class="pills" id="pills">
+            <span class="pill" data-val="Apartment">Apartment</span>
+            <span class="pill" data-val="House">House</span>
+            <span class="pill" data-val="Villa">Villa</span>
+            <span class="pill" data-val="Office">Office</span>
+            <span class="pill" data-val="Other">Other</span>
+          </div>
+          <div class="pills-err" id="e-type">Please select a property type.</div>
+        </div>
+
+        <div class="field">
+          <label for="f-area">Area / District</label>
+          <input id="f-area" type="text" autocomplete="address-level2" placeholder="e.g. Colombo 3" />
+          <div class="err-msg" id="e-area">Please enter your area or district.</div>
+        </div>
+
+        <div class="field">
+          <label for="f-notes">Additional notes <span class="optional">(optional)</span></label>
+          <textarea id="f-notes" placeholder="Anything we should know before the visit..."></textarea>
+        </div>
+
+        <div class="btn-row">
+          <button class="btn btn-primary" onclick="nextStep1()">Next step →</button>
+        </div>
+      </div>
+
+      <!-- ─── Step 2: Date & time ────────────────────────────────── -->
+      <div id="step2" style="display:none">
+        <div class="section-title">Preferred date &amp; time</div>
+        <p class="section-sub">Choose when you'd like us to visit.</p>
+
+        <div class="row">
+          <div class="field">
+            <label for="f-date">Date</label>
+            <input id="f-date" type="date" />
+            <div class="err-msg" id="e-date">Please select a date.</div>
+          </div>
+          <div class="field">
+            <label for="f-time">Time slot</label>
+            <select id="f-time">
+              <option value="">Select a time...</option>
+              <option value="08:00">8:00 AM</option>
+              <option value="09:00">9:00 AM</option>
+              <option value="10:00">10:00 AM</option>
+              <option value="11:00">11:00 AM</option>
+              <option value="12:00">12:00 PM</option>
+              <option value="13:00">1:00 PM</option>
+              <option value="14:00">2:00 PM</option>
+              <option value="15:00">3:00 PM</option>
+              <option value="16:00">4:00 PM</option>
+              <option value="17:00">5:00 PM</option>
+            </select>
+            <div class="err-msg" id="e-time">Please select a time slot.</div>
+          </div>
+        </div>
+
+        <div class="btn-row">
+          <button class="btn btn-secondary" onclick="goStep(1)">← Back</button>
+          <button class="btn btn-primary" onclick="nextStep2()">Review booking →</button>
+        </div>
+      </div>
+
+      <!-- ─── Step 3: Review & Confirm ──────────────────────────── -->
+      <div id="step3" style="display:none">
+        <div class="section-title">Review your booking</div>
+        <p class="section-sub">Make sure everything looks right before confirming.</p>
+
+        <table class="review-table" id="review-table"></table>
+
+        <!-- Hidden GSI button — required by Google Identity Services, never shown to user -->
+        <div id="gsi-btn" style="display:none;position:absolute;opacity:0;pointer-events:none;"></div>
+
+        <div class="btn-row">
+          <button class="btn btn-secondary" onclick="goStep(2)">← Back</button>
+          <button class="btn btn-primary" id="confirm-btn" onclick="handleConfirm()">Confirm booking</button>
+        </div>
+      </div>
+
+      <!-- ─── Step 4: Success ───────────────────────────────────── -->
+      <div id="step4" style="display:none">
+        <div class="success-panel">
+          <div class="success-circle">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="20 6 9 17 4 12"/>
+            </svg>
+          </div>
+          <h2>Booking confirmed!</h2>
+          <p>Thank you. Your appointment request has been received. Our team will be in touch to confirm.</p>
+          <div class="ref-label">Booking reference</div>
+          <div class="ref-code" id="ref-code">BK-A3F2K1</div>
+          <button class="btn btn-primary btn-reset" onclick="resetForm()">Book another appointment</button>
+        </div>
+      </div>
+
+    </div><!-- /card -->
+  </div><!-- /page -->
+
+  <!-- Toast notification -->
+  <div class="toast" id="toast"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
