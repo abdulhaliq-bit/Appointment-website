@@ -4,110 +4,85 @@
  * Replace the two values in CONFIG before deploying:
  *   CLIENT_ID   — your OAuth 2.0 client ID from Google Cloud Console
  *   CALENDAR_ID — your Google Calendar ID (Settings → Integrate calendar)
- *
- * Required OAuth scope: https://www.googleapis.com/auth/calendar.events
- * Ensure your domain is added as an Authorized JavaScript Origin in
- * the Google Cloud Console OAuth client settings.
- *
- * Slot rules:
- *   - 6 slots per day: 9–10, 10–11, 11–12, 1–2, 2–3, 3–4
- *   - Each slot holds exactly 1 customer (1 hour duration)
- *   - Booked slots are greyed out and unselectable
  */
 
 /* ─── Config ──────────────────────────────────────────────────── */
 const CONFIG = {
-  CLIENT_ID:        '235751329614-igv6su08k8v2je8fenccts0qc0184mgv.apps.googleusercontent.com',
-  CALENDAR_ID:      'qilahludba@gmail.com',
+  CLIENT_ID:        'YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com',
+  CALENDAR_ID:      'YOUR_CALENDAR_ID_HERE',
   DURATION_MINUTES: 60,
   TIMEZONE:         'Asia/Colombo',
 };
 
-/* ─── Available time slots ────────────────────────────────────── */
+/* ─── Time slots ──────────────────────────────────────────────── */
 const ALL_SLOTS = [
   { value: '09:00', label: '9:00 AM – 10:00 AM' },
   { value: '10:00', label: '10:00 AM – 11:00 AM' },
   { value: '11:00', label: '11:00 AM – 12:00 PM' },
-  { value: '13:00', label: '1:00 PM – 2:00 PM' },
-  { value: '14:00', label: '2:00 PM – 3:00 PM' },
-  { value: '15:00', label: '3:00 PM – 4:00 PM' },
+  { value: '13:00', label: '1:00 PM – 2:00 PM'   },
+  { value: '14:00', label: '2:00 PM – 3:00 PM'   },
+  { value: '15:00', label: '3:00 PM – 4:00 PM'   },
 ];
 
 /* ─── State ───────────────────────────────────────────────────── */
-let tokenClient    = null;
-let accessToken    = null;
-let pendingSubmit  = false;
-let selectedType   = '';
-let currentStep    = 1;
-// bookedSlots: { "YYYY-MM-DD": Set<"HH:00"> }
-// Persisted in sessionStorage so refreshing the page retains slots
-// booked during the current browser session.
-let bookedSlots    = {};
+let tokenClient   = null;
+let accessToken   = null;
+let pendingSubmit = false;
+let selectedType  = '';
+let bookedSlots   = {};
 
 /* ─── Init ────────────────────────────────────────────────────── */
 window.addEventListener('load', () => {
   const today = new Date().toISOString().split('T')[0];
   document.getElementById('f-date').min = today;
 
-  // Restore any slots booked this session
   try {
     const stored = sessionStorage.getItem('bookedSlots');
     if (stored) bookedSlots = JSON.parse(stored);
   } catch (e) { bookedSlots = {}; }
 
-  // Re-render slots whenever the date changes
   document.getElementById('f-date').addEventListener('change', () => {
     const date = document.getElementById('f-date').value;
-    if (date) {
-      clearFieldErr('f-date', 'e-date');
-      renderTimeSlots(date);
-    }
+    if (date) { clearFieldErr('f-date', 'e-date'); renderTimeSlots(date); }
   });
 
   setTimeout(initGsi, 1500);
 });
 
-/* ─── Render time slots for a given date ─────────────────────── */
+/* ─── Render time slots ───────────────────────────────────────── */
 function renderTimeSlots(date) {
   const select = document.getElementById('f-time');
-  const booked = bookedSlots[date] ? bookedSlots[date] : [];
+  const booked = bookedSlots[date] || [];
 
   select.innerHTML = '<option value="">Select a time...</option>';
-
   ALL_SLOTS.forEach(slot => {
     const taken = booked.includes(slot.value);
     const opt   = document.createElement('option');
-    opt.value    = taken ? '' : slot.value;
-    opt.textContent = taken ? `${slot.label} — Unavailable` : slot.label;
-    opt.disabled = taken;
-    if (taken) opt.style.color = '#aaa';
+    opt.value       = taken ? '' : slot.value;
+    opt.textContent = taken ? slot.label + ' — Unavailable' : slot.label;
+    opt.disabled    = taken;
     select.appendChild(opt);
   });
 
-  // Check if all slots are taken
   const allTaken = ALL_SLOTS.every(s => booked.includes(s.value));
-  if (allTaken) {
-    select.innerHTML = '<option value="">No slots available on this date</option>';
-    showDateFullNotice(true);
-  } else {
-    showDateFullNotice(false);
-  }
+  showDateFullNotice(allTaken);
+  if (allTaken) select.innerHTML = '<option value="">No slots available on this date</option>';
 }
 
 function showDateFullNotice(show) {
   let notice = document.getElementById('date-full-notice');
   if (!notice) {
     notice = document.createElement('div');
-    notice.id = 'date-full-notice';
-    notice.className = 'date-full-notice';
+    notice.id          = 'date-full-notice';
+    notice.className   = 'date-full-notice';
     notice.textContent = 'This date is fully booked. Please choose a different date.';
-    const dateField = document.getElementById('f-date').parentNode;
-    dateField.parentNode.insertBefore(notice, dateField.parentNode.nextSibling);
+    // Append safely after the .row container that holds date + time
+    const row = document.getElementById('f-date').closest('.row');
+    row.parentNode.insertBefore(notice, row.nextSibling);
   }
   notice.style.display = show ? 'block' : 'none';
 }
 
-/* ─── Mark a slot as booked (called after successful Calendar POST) */
 function markSlotBooked(date, time) {
   if (!bookedSlots[date]) bookedSlots[date] = [];
   if (!bookedSlots[date].includes(time)) bookedSlots[date].push(time);
@@ -117,7 +92,6 @@ function markSlotBooked(date, time) {
 /* ─── Google Identity Services ───────────────────────────────── */
 function initGsi() {
   if (typeof google === 'undefined' || !google.accounts) return;
-
   tokenClient = google.accounts.oauth2.initTokenClient({
     client_id: CONFIG.CLIENT_ID,
     scope: 'https://www.googleapis.com/auth/calendar.events',
@@ -129,10 +103,7 @@ function initGsi() {
         return;
       }
       accessToken = response.access_token;
-      if (pendingSubmit) {
-        pendingSubmit = false;
-        doAddToCalendar();
-      }
+      if (pendingSubmit) { pendingSubmit = false; doAddToCalendar(); }
     },
   });
 }
@@ -154,72 +125,51 @@ function setFieldErr(inputId, errId, hasError) {
   if (input) input.classList.toggle('err', hasError);
   if (msg)   msg.classList.toggle('show', hasError);
 }
+function clearFieldErr(inputId, errId) { setFieldErr(inputId, errId, false); }
 
-function clearFieldErr(inputId, errId) {
-  setFieldErr(inputId, errId, false);
-}
-
-['f-name', 'f-phone', 'f-email', 'f-area'].forEach(id => {
+['f-name','f-phone','f-email','f-area'].forEach(id => {
   const el = document.getElementById(id);
   if (!el) return;
-  const errId = 'e-' + id.replace('f-', '');
-  el.addEventListener('input', () => clearFieldErr(id, errId));
+  el.addEventListener('input', () => clearFieldErr(id, 'e-' + id.replace('f-', '')));
 });
+document.getElementById('f-time').addEventListener('change', () => clearFieldErr('f-time', 'e-time'));
 
-document.getElementById('f-time').addEventListener('change', () => {
-  clearFieldErr('f-time', 'e-time');
-});
-
-/* ─── Step 1: validate & advance ─────────────────────────────── */
+/* ─── Step 1 validate ─────────────────────────────────────────── */
 function nextStep1() {
   let valid = true;
+  const name    = document.getElementById('f-name').value.trim();
+  const phone   = document.getElementById('f-phone').value.trim();
+  const email   = document.getElementById('f-email').value.trim();
+  const area    = document.getElementById('f-area').value.trim();
+  const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 
-  const name      = document.getElementById('f-name').value.trim();
-  const phone     = document.getElementById('f-phone').value.trim();
-  const email     = document.getElementById('f-email').value.trim();
-  const area      = document.getElementById('f-area').value.trim();
-  const emailOk   = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-
-  setFieldErr('f-name',  'e-name',  !name);       if (!name)    valid = false;
-  setFieldErr('f-phone', 'e-phone', !phone);      if (!phone)   valid = false;
-  setFieldErr('f-email', 'e-email', !emailOk);    if (!emailOk) valid = false;
-  setFieldErr('f-area',  'e-area',  !area);       if (!area)    valid = false;
-
-  if (!selectedType) {
-    document.getElementById('e-type').classList.add('show');
-    valid = false;
-  }
+  setFieldErr('f-name',  'e-name',  !name);    if (!name)    valid = false;
+  setFieldErr('f-phone', 'e-phone', !phone);   if (!phone)   valid = false;
+  setFieldErr('f-email', 'e-email', !emailOk); if (!emailOk) valid = false;
+  setFieldErr('f-area',  'e-area',  !area);    if (!area)    valid = false;
+  if (!selectedType) { document.getElementById('e-type').classList.add('show'); valid = false; }
 
   if (valid) goStep(2);
 }
 
-/* ─── Step 2: validate & advance ─────────────────────────────── */
+/* ─── Step 2 validate ─────────────────────────────────────────── */
 function nextStep2() {
   let valid = true;
-
   const date = document.getElementById('f-date').value;
   const time = document.getElementById('f-time').value;
 
   setFieldErr('f-date', 'e-date', !date); if (!date) valid = false;
   setFieldErr('f-time', 'e-time', !time); if (!time) valid = false;
 
-  if (valid) {
-    buildReview();
-    goStep(3);
-  }
+  if (valid) { buildReview(); goStep(3); }
 }
 
 /* ─── Step navigation ─────────────────────────────────────────── */
 function goStep(n) {
-  [1, 2, 3, 4].forEach(i => {
+  [1, 2, 3].forEach(i => {
     document.getElementById('step' + i).style.display = i === n ? 'block' : 'none';
   });
-  currentStep = n;
   updateStepDots(n);
-
-  const stepsWrapper = document.getElementById('steps-wrapper');
-  if (stepsWrapper) stepsWrapper.style.display = n === 4 ? 'none' : 'block';
-
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
@@ -227,15 +177,12 @@ function updateStepDots(n) {
   [1, 2, 3].forEach(i => {
     const dot = document.getElementById('sd' + i);
     const lbl = document.getElementById('sl-' + i);
-
-    if (i < n)      { dot.className = 'step-dot done';   dot.textContent = '✓'; }
-    else if (i === n) { dot.className = 'step-dot active'; dot.textContent = i; }
-    else            { dot.className = 'step-dot idle';   dot.textContent = i; }
-
+    if (i < n)       { dot.className = 'step-dot done';   dot.textContent = '✓'; }
+    else if (i === n){ dot.className = 'step-dot active'; dot.textContent = i;   }
+    else             { dot.className = 'step-dot idle';   dot.textContent = i;   }
     if (lbl) lbl.className = i === n ? 'active-lbl' : '';
   });
-
-  ['sl1', 'sl2'].forEach((id, idx) => {
+  ['sl1','sl2'].forEach((id, idx) => {
     const line = document.getElementById(id);
     if (line) line.className = (idx + 1) < n ? 'step-line done' : 'step-line';
   });
@@ -243,9 +190,9 @@ function updateStepDots(n) {
 
 /* ─── Build review table ──────────────────────────────────────── */
 function buildReview() {
-  const timeVal  = document.getElementById('f-time').value;
-  const slot     = ALL_SLOTS.find(s => s.value === timeVal);
-  const slotLabel = slot ? slot.label : formatTime(timeVal);
+  const timeVal   = document.getElementById('f-time').value;
+  const slot      = ALL_SLOTS.find(s => s.value === timeVal);
+  const slotLabel = slot ? slot.label : timeVal;
 
   const rows = [
     ['Full name',       document.getElementById('f-name').value.trim()],
@@ -259,11 +206,11 @@ function buildReview() {
   ];
 
   document.getElementById('review-table').innerHTML = rows
-    .map(([key, val]) => `<tr><td>${key}</td><td>${escHtml(val)}</td></tr>`)
+    .map(([k, v]) => `<tr><td>${k}</td><td>${escHtml(v)}</td></tr>`)
     .join('');
 }
 
-/* ─── Confirm & calendar integration ─────────────────────────── */
+/* ─── Confirm handler ─────────────────────────────────────────── */
 function handleConfirm() {
   const btn = document.getElementById('confirm-btn');
   btn.textContent = 'Confirming...';
@@ -271,17 +218,14 @@ function handleConfirm() {
 
   if (!accessToken) {
     pendingSubmit = true;
-    if (tokenClient) {
-      tokenClient.requestAccessToken({ prompt: 'consent' });
-    } else {
-      pendingSubmit = false;
-      doAddToCalendar();
-    }
+    if (tokenClient) { tokenClient.requestAccessToken({ prompt: 'consent' }); }
+    else             { pendingSubmit = false; doAddToCalendar(); }
   } else {
     doAddToCalendar();
   }
 }
 
+/* ─── Add event to admin's calendar only ─────────────────────── */
 function doAddToCalendar() {
   const name  = document.getElementById('f-name').value.trim();
   const phone = document.getElementById('f-phone').value.trim();
@@ -292,15 +236,18 @@ function doAddToCalendar() {
   const time  = document.getElementById('f-time').value;
 
   const slot      = ALL_SLOTS.find(s => s.value === time);
-  const slotLabel = slot ? slot.label : formatTime(time);
+  const slotLabel = slot ? slot.label : time;
 
+  // Build RFC3339 datetimes — Google Calendar API requires full ISO format
   const startDT = `${date}T${time}:00`;
   const endDate = new Date(`${date}T${time}:00`);
   endDate.setMinutes(endDate.getMinutes() + CONFIG.DURATION_MINUTES);
-  const endDT = endDate.toISOString().slice(0, 19);
+  const pad = n => String(n).padStart(2, '0');
+  const endDT = `${endDate.getFullYear()}-${pad(endDate.getMonth()+1)}-${pad(endDate.getDate())}T${pad(endDate.getHours())}:${pad(endDate.getMinutes())}:00`;
 
+  // No attendees field — event is added ONLY to the admin's calendar
   const event = {
-    summary: `Appointment — ${name}`,
+    summary: `Appointment - ${name}`,
     description: [
       `Name:      ${name}`,
       `Phone:     ${phone}`,
@@ -308,11 +255,10 @@ function doAddToCalendar() {
       `Property:  ${selectedType}`,
       `Area:      ${area}`,
       `Time slot: ${slotLabel}`,
-      `Notes:     ${notes || '—'}`,
+      `Notes:     ${notes || '-'}`,
     ].join('\n'),
     start: { dateTime: startDT, timeZone: CONFIG.TIMEZONE },
     end:   { dateTime: endDT,   timeZone: CONFIG.TIMEZONE },
-    attendees: [{ email }],
     reminders: {
       useDefault: false,
       overrides: [
@@ -330,9 +276,8 @@ function doAddToCalendar() {
   fetch(apiUrl, { method: 'POST', headers, body: JSON.stringify(event) })
     .then(r => r.ok ? r.json() : Promise.reject(new Error(`API ${r.status}`)))
     .then(() => {
-      // Mark this slot as taken before showing success
       markSlotBooked(date, time);
-      showSuccess();
+      showThankYouModal();
     })
     .catch(err => {
       console.error('[Calendar] Event creation failed:', err.message);
@@ -341,26 +286,64 @@ function doAddToCalendar() {
     });
 }
 
-/* ─── Success screen ──────────────────────────────────────────── */
-function showSuccess() {
-  document.getElementById('ref-code').textContent = generateRef();
-  goStep(4);
-}
-
-function generateRef() {
+/* ─── Thank You Modal ─────────────────────────────────────────── */
+function showThankYouModal() {
+  // Generate booking reference
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   let ref = 'BK-';
   for (let i = 0; i < 6; i++) ref += chars[Math.floor(Math.random() * chars.length)];
-  return ref;
+  document.getElementById('ref-code').textContent = ref;
+
+  // Populate summary inside modal
+  const timeVal   = document.getElementById('f-time').value;
+  const slot      = ALL_SLOTS.find(s => s.value === timeVal);
+  const slotLabel = slot ? slot.label : timeVal;
+
+  const summaryRows = [
+    ['Name',  document.getElementById('f-name').value.trim()],
+    ['Date',  formatDate(document.getElementById('f-date').value)],
+    ['Time',  slotLabel],
+    ['Email', document.getElementById('f-email').value.trim()],
+  ];
+
+  document.getElementById('modal-summary').innerHTML = summaryRows
+    .map(([k, v]) =>
+      `<div class="modal-summary-row">
+         <span>${k}</span><span>${escHtml(v)}</span>
+       </div>`)
+    .join('');
+
+  // Show overlay
+  const overlay = document.getElementById('thankyou-overlay');
+  overlay.style.display = 'flex';
+  document.body.style.overflow = 'hidden';
 }
+
+function closeModalAndReset() {
+  document.getElementById('thankyou-overlay').style.display = 'none';
+  document.body.style.overflow = '';
+  resetForm();
+}
+
+// Close modal if user clicks outside the box
+document.getElementById('thankyou-overlay').addEventListener('click', function(e) {
+  if (e.target === this) closeModalAndReset();
+});
+
+// Close on Escape key
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    const overlay = document.getElementById('thankyou-overlay');
+    if (overlay.style.display === 'flex') closeModalAndReset();
+  }
+});
 
 /* ─── Reset form ──────────────────────────────────────────────── */
 function resetForm() {
-  ['f-name', 'f-phone', 'f-email', 'f-area', 'f-notes', 'f-date'].forEach(id => {
+  ['f-name','f-phone','f-email','f-area','f-notes','f-date'].forEach(id => {
     document.getElementById(id).value = '';
   });
 
-  // Reset time slot dropdown to default (no date selected yet)
   const select = document.getElementById('f-time');
   select.innerHTML = '<option value="">Select a time...</option>';
   ALL_SLOTS.forEach(slot => {
@@ -372,7 +355,6 @@ function resetForm() {
 
   document.querySelectorAll('.pill').forEach(p => p.classList.remove('selected'));
   selectedType = '';
-
   document.querySelectorAll('.err-msg, .pills-err').forEach(el => el.classList.remove('show'));
   document.querySelectorAll('.err').forEach(el => el.classList.remove('err'));
 
@@ -408,15 +390,6 @@ function formatDate(dateStr) {
   });
 }
 
-function formatTime(timeStr) {
-  if (!timeStr) return '';
-  const [h, min] = timeStr.split(':');
-  const hour = parseInt(h, 10);
-  return `${hour > 12 ? hour - 12 : hour || 12}:${min} ${hour >= 12 ? 'PM' : 'AM'}`;
-}
-
 function escHtml(str) {
-  return str
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
