@@ -312,7 +312,6 @@ function doAddToCalendar() {
     ].join('\n'),
     start: { dateTime: startDT, timeZone: CONFIG.TIMEZONE },
     end:   { dateTime: endDT,   timeZone: CONFIG.TIMEZONE },
-    attendees: [{ email }],
     reminders: {
       useDefault: false,
       overrides: [
