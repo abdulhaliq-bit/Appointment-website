@@ -253,7 +253,7 @@ function handleConfirm() {
     }
   })
   .catch(function(err) {
-    console.error('[book]', err);
+    console.error('book', err);
     showToast('Something went wrong. Please try again.');
     resetConfirmBtn();
   });
