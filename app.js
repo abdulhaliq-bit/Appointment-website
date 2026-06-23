@@ -1,11 +1,17 @@
 /* ================================================================
-   CONFIG — replace these two values before deploying
+   CONFIG — fill in ALL four values before deploying
    ================================================================ */
 var CONFIG = {
+  /* Google Calendar OAuth */
   CLIENT_ID:        '235751329614-igv6su08k8v2je8fenccts0qc0184mgv.apps.googleusercontent.com',
   CALENDAR_ID:      'qilahludba@gmail.com',
   DURATION_MINUTES: 60,
   TIMEZONE:         'Asia/Colombo',
+
+  /* Firebase — get these from Firebase Console → Project Settings */
+  FIREBASE_API_KEY:    'AIzaSyA3iL6nq6gjnVfJPclxdmCONgdisZ1_fv4',
+  FIREBASE_AUTH_DOMAIN:'appointment-booking-8a83b.firebaseapp.com',
+  FIREBASE_PROJECT_ID: 'appointment-booking-8a83b',
 };
 
 /* ================================================================
@@ -24,32 +30,67 @@ var ALL_SLOTS = [
    STATE
    ================================================================ */
 var tokenClient   = null;
-var accessToken   = null;   /* kept alive for entire browser session */
+var accessToken   = null;   /* in-memory only, never stored */
 var pendingSubmit = false;
 var selectedType  = '';
 var toastTimer    = null;
+var db            = null;   /* Firestore instance */
 
-/*
-  bookedSlots is stored in localStorage so it persists across
-  page closes/refreshes — format: { "YYYY-MM-DD": ["09:00","13:00"] }
-*/
-var bookedSlots = {};
-
-function loadBookedSlots() {
+/* ================================================================
+   FIREBASE INIT
+   Firestore stores booked slots so ALL devices see the same data.
+   Collection: "booked_slots"
+   Document ID: "YYYY-MM-DD"
+   Fields: { slots: ["09:00","13:00", ...] }
+   ================================================================ */
+function initFirebase() {
   try {
-    var raw = localStorage.getItem('appt_booked_slots');
-    if (raw) bookedSlots = JSON.parse(raw);
-  } catch(e) { bookedSlots = {}; }
+    firebase.initializeApp({
+      apiKey:    CONFIG.FIREBASE_API_KEY,
+      authDomain:CONFIG.FIREBASE_AUTH_DOMAIN,
+      projectId: CONFIG.FIREBASE_PROJECT_ID,
+    });
+    db = firebase.firestore();
+    console.log('[Firebase] Connected');
+  } catch(e) {
+    console.error('[Firebase] Init failed:', e);
+  }
 }
 
-function saveBookedSlots() {
-  try { localStorage.setItem('appt_booked_slots', JSON.stringify(bookedSlots)); } catch(e) {}
+/* Fetch booked slots for a date from Firestore */
+function getBookedSlots(date, callback) {
+  if (!db) { callback([]); return; }
+  db.collection('booked_slots').doc(date).get()
+    .then(function(doc) {
+      if (doc.exists && doc.data().slots) {
+        callback(doc.data().slots);
+      } else {
+        callback([]);
+      }
+    })
+    .catch(function(e) {
+      console.error('[Firebase] Read error:', e);
+      callback([]);
+    });
 }
 
-function markSlotBooked(date, time) {
-  if (!bookedSlots[date]) bookedSlots[date] = [];
-  if (bookedSlots[date].indexOf(time) === -1) bookedSlots[date].push(time);
-  saveBookedSlots();
+/* Save a newly booked slot to Firestore */
+function saveBookedSlot(date, time, callback) {
+  if (!db) { if(callback) callback(); return; }
+  var ref = db.collection('booked_slots').doc(date);
+  ref.get().then(function(doc) {
+    var existing = (doc.exists && doc.data().slots) ? doc.data().slots : [];
+    if (existing.indexOf(time) === -1) existing.push(time);
+    return ref.set({ slots: existing });
+  })
+  .then(function() {
+    console.log('[Firebase] Slot saved:', date, time);
+    if (callback) callback();
+  })
+  .catch(function(e) {
+    console.error('[Firebase] Write error:', e);
+    if (callback) callback();
+  });
 }
 
 /* ================================================================
@@ -57,7 +98,7 @@ function markSlotBooked(date, time) {
    ================================================================ */
 document.addEventListener('DOMContentLoaded', function() {
 
-  loadBookedSlots();
+  initFirebase();
 
   /* Minimum date = today */
   var dateEl = document.getElementById('f-date');
@@ -66,7 +107,7 @@ document.addEventListener('DOMContentLoaded', function() {
     dateEl.addEventListener('change', function() {
       if (this.value) {
         clearFieldErr('f-date', 'e-date');
-        renderTimeSlots(this.value);
+        loadAndRenderSlots(this.value);
       }
     });
   }
@@ -91,7 +132,7 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   }
 
-  /* Inline error clear on text input */
+  /* Inline error clear */
   ['f-name','f-phone','f-email','f-area'].forEach(function(id) {
     var el = document.getElementById(id);
     if (el) el.addEventListener('input', function() {
@@ -99,7 +140,7 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   });
 
-  /* Modal backdrop click closes it */
+  /* Modal backdrop click */
   var overlay = document.getElementById('thankyou-overlay');
   if (overlay) {
     overlay.addEventListener('click', function(e) {
@@ -107,7 +148,7 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   }
 
-  /* Escape key closes modal */
+  /* Escape closes modal */
   document.addEventListener('keydown', function(e) {
     if (e.key === 'Escape') {
       var ov = document.getElementById('thankyou-overlay');
@@ -115,17 +156,16 @@ document.addEventListener('DOMContentLoaded', function() {
     }
   });
 
-  /* Start loading GSI script */
+  /* Init Google Sign-in */
   setTimeout(initGsi, 1500);
 });
 
 /* ================================================================
    GOOGLE IDENTITY SERVICES
-   Only the admin signs in — token is kept in memory, never stored.
-   prompt:'consent' only on first auth; afterwards no prompt needed.
+   Token kept in memory — admin signs in once per browser session.
+   On a new device/browser, they sign in once and it works from
+   there. The popup never bothers customers — only the admin sees it.
    ================================================================ */
-var gsiReady = false;
-
 function initGsi() {
   if (typeof google === 'undefined' || !google.accounts || !google.accounts.oauth2) {
     setTimeout(initGsi, 1500);
@@ -141,27 +181,40 @@ function initGsi() {
         resetConfirmBtn();
         return;
       }
-      /* Store token in memory for this session only */
       accessToken = response.access_token;
-      gsiReady    = true;
       if (pendingSubmit) {
         pendingSubmit = false;
         doAddToCalendar();
       }
     },
   });
-  gsiReady = true;
 }
 
 /* ================================================================
-   TIME SLOT RENDERING
-   Reads from localStorage so booked slots persist across sessions
+   LOAD SLOTS FROM FIRESTORE THEN RENDER
    ================================================================ */
-function renderTimeSlots(date) {
+function loadAndRenderSlots(date) {
   var select = document.getElementById('f-time');
+  var notice = document.getElementById('date-full-notice');
   if (!select) return;
 
-  var booked = bookedSlots[date] || [];
+  /* Show loading state */
+  select.innerHTML = '<option value="">Loading available times...</option>';
+  select.disabled = true;
+  if (notice) notice.style.display = 'none';
+
+  getBookedSlots(date, function(booked) {
+    select.disabled = false;
+    renderTimeSlots(date, booked);
+  });
+}
+
+function renderTimeSlots(date, booked) {
+  var select = document.getElementById('f-time');
+  var notice = document.getElementById('date-full-notice');
+  if (!select) return;
+  if (!booked) booked = [];
+
   select.innerHTML = '<option value="">Select a time...</option>';
 
   var availableCount = 0;
@@ -175,27 +228,16 @@ function renderTimeSlots(date) {
     select.appendChild(opt);
   });
 
-  /* Show/hide fully-booked notice */
-  var notice = document.getElementById('date-full-notice');
-  if (!notice) {
-    notice = document.createElement('div');
-    notice.id          = 'date-full-notice';
-    notice.className   = 'date-full-notice';
-    notice.textContent = 'This date is fully booked. Please choose a different date.';
-    var row = document.getElementById('f-date').closest('.row');
-    if (row && row.parentNode) row.parentNode.appendChild(notice);
-  }
-
   if (availableCount === 0) {
     select.innerHTML = '<option value="">No slots available on this date</option>';
-    notice.style.display = 'block';
+    if (notice) notice.style.display = 'block';
   } else {
-    notice.style.display = 'none';
+    if (notice) notice.style.display = 'none';
   }
 }
 
 /* ================================================================
-   FORM VALIDATION
+   VALIDATION
    ================================================================ */
 function setFieldErr(inputId, errId, hasError) {
   var input = document.getElementById(inputId);
@@ -206,7 +248,7 @@ function setFieldErr(inputId, errId, hasError) {
 function clearFieldErr(inputId, errId) { setFieldErr(inputId, errId, false); }
 
 /* ================================================================
-   STEP 1 — validate details
+   STEP 1
    ================================================================ */
 function nextStep1() {
   var valid   = true;
@@ -220,7 +262,6 @@ function nextStep1() {
   setFieldErr('f-phone', 'e-phone', !phone);   if (!phone)   valid = false;
   setFieldErr('f-email', 'e-email', !emailOk); if (!emailOk) valid = false;
   setFieldErr('f-area',  'e-area',  !area);    if (!area)    valid = false;
-
   if (!selectedType) {
     var et = document.getElementById('e-type');
     if (et) et.classList.add('show');
@@ -230,7 +271,7 @@ function nextStep1() {
 }
 
 /* ================================================================
-   STEP 2 — validate date & time
+   STEP 2
    ================================================================ */
 function nextStep2() {
   var valid = true;
@@ -242,7 +283,7 @@ function nextStep2() {
 }
 
 /* ================================================================
-   STEP NAVIGATION
+   NAVIGATION
    ================================================================ */
 function goStep(n) {
   [1,2,3].forEach(function(i) {
@@ -276,7 +317,6 @@ function buildReview() {
   var tv = document.getElementById('f-time').value;
   var sm = ALL_SLOTS.filter(function(s){ return s.value===tv; });
   var sl = sm.length ? sm[0].label : tv;
-
   var rows = [
     ['Full name',       document.getElementById('f-name').value.trim()],
     ['Phone',           document.getElementById('f-phone').value.trim()],
@@ -287,7 +327,6 @@ function buildReview() {
     ['Date',            formatDate(document.getElementById('f-date').value)],
     ['Time slot',       sl],
   ];
-
   var rt = document.getElementById('review-table');
   if (rt) rt.innerHTML = rows.map(function(r) {
     return '<tr><td>'+r[0]+'</td><td>'+escHtml(r[1])+'</td></tr>';
@@ -296,22 +335,20 @@ function buildReview() {
 
 /* ================================================================
    CONFIRM BUTTON
-   If token already exists → go straight to calendar POST.
-   If not → request token (popup shows once), then POST in callback.
+   If token in memory → skip popup, go straight to calendar.
+   If no token → request once, then proceed in callback.
    ================================================================ */
 function handleConfirm() {
   var btn = document.getElementById('confirm-btn');
   if (btn) { btn.textContent = 'Confirming...'; btn.classList.add('btn-loading'); }
 
   if (accessToken) {
-    /* Token already in memory — no popup needed */
     doAddToCalendar();
   } else {
     pendingSubmit = true;
     if (tokenClient) {
       tokenClient.requestAccessToken({ prompt: 'consent' });
     } else {
-      /* GSI not ready yet — retry */
       setTimeout(function() {
         if (tokenClient) {
           tokenClient.requestAccessToken({ prompt: 'consent' });
@@ -326,8 +363,7 @@ function handleConfirm() {
 }
 
 /* ================================================================
-   CALENDAR API — POST event to ADMIN calendar only
-   No attendees field = event goes only to the admin's calendar.
+   CALENDAR API — admin calendar only, no attendees
    ================================================================ */
 function doAddToCalendar() {
   if (!accessToken) {
@@ -347,37 +383,29 @@ function doAddToCalendar() {
   var sm  = ALL_SLOTS.filter(function(s){ return s.value===time; });
   var sl  = sm.length ? sm[0].label : time;
   var tp  = time.split(':');
-  var sh  = parseInt(tp[0],10);
-  var smi = parseInt(tp[1],10);
+  var sh  = parseInt(tp[0],10), smi = parseInt(tp[1],10);
   var tot = sh*60 + smi + CONFIG.DURATION_MINUTES;
-  var eh  = Math.floor(tot/60);
-  var em  = tot%60;
+  var eh  = Math.floor(tot/60), em = tot%60;
   var pad = function(x){ return x<10?'0'+x:''+x; };
 
   var event = {
     summary: 'Appointment - ' + name,
     description:
-      'Name: '      + name      + '\n' +
-      'Phone: '     + phone     + '\n' +
-      'Email: '     + email     + '\n' +
+      'Name: '      + name         + '\n' +
+      'Phone: '     + phone        + '\n' +
+      'Email: '     + email        + '\n' +
       'Property: '  + selectedType + '\n' +
-      'Area: '      + area      + '\n' +
-      'Time slot: ' + sl        + '\n' +
+      'Area: '      + area         + '\n' +
+      'Time slot: ' + sl           + '\n' +
       'Notes: '     + notes,
-    start: {
-      dateTime: date + 'T' + pad(sh)  + ':' + pad(smi) + ':00',
-      timeZone: CONFIG.TIMEZONE,
-    },
-    end: {
-      dateTime: date + 'T' + pad(eh)  + ':' + pad(em)  + ':00',
-      timeZone: CONFIG.TIMEZONE,
-    },
-    /* NO attendees field — event only appears on admin's calendar */
+    start: { dateTime: date+'T'+pad(sh)+':'+pad(smi)+':00', timeZone: CONFIG.TIMEZONE },
+    end:   { dateTime: date+'T'+pad(eh)+':'+pad(em)+':00',  timeZone: CONFIG.TIMEZONE },
+    /* NO attendees — only goes to admin calendar */
     reminders: {
       useDefault: false,
       overrides: [
-        { method: 'email', minutes: 1440 }, /* 24h before */
-        { method: 'popup', minutes: 30   }, /* 30 min before */
+        { method: 'email', minutes: 1440 },
+        { method: 'popup', minutes: 30   },
       ],
     },
   };
@@ -396,18 +424,16 @@ function doAddToCalendar() {
   )
   .then(function(r) {
     if (r.status === 200 || r.status === 201) {
-      /* Success — mark slot as booked in localStorage, then show modal */
-      markSlotBooked(date, time);
-      showThankYouModal();
+      /* Save booked slot to Firestore so ALL devices see it */
+      saveBookedSlot(date, time, function() {
+        showThankYouModal();
+      });
     } else if (r.status === 401) {
-      /* Token expired — clear and ask user to click confirm again */
       accessToken = null;
-      showToast('Your session expired. Please click Confirm again.');
+      showToast('Session expired. Please click Confirm again.');
       resetConfirmBtn();
     } else {
-      r.text().then(function(t) {
-        console.error('[Calendar] Error ' + r.status + ':', t);
-      });
+      r.text().then(function(t) { console.error('[Calendar]', r.status, t); });
       showToast('Something went wrong. Please try again.');
       resetConfirmBtn();
     }
@@ -425,15 +451,12 @@ function doAddToCalendar() {
 function showThankYouModal() {
   resetConfirmBtn();
 
-  /* Generate booking reference */
   var chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   var ref   = 'BK-';
-  for (var i=0; i<6; i++) ref += chars[Math.floor(Math.random() * chars.length)];
-
+  for (var i=0; i<6; i++) ref += chars[Math.floor(Math.random()*chars.length)];
   var refEl = document.getElementById('ref-code');
   if (refEl) refEl.textContent = ref;
 
-  /* Summary rows inside modal */
   var tv  = document.getElementById('f-time').value;
   var sm  = ALL_SLOTS.filter(function(s){ return s.value===tv; });
   var sl  = sm.length ? sm[0].label : tv;
@@ -450,7 +473,6 @@ function showThankYouModal() {
     }).join('');
   }
 
-  /* Show the overlay */
   var overlay = document.getElementById('thankyou-overlay');
   if (overlay) {
     overlay.style.display = 'flex';
@@ -467,8 +489,7 @@ function closeModalAndReset() {
 
 /* ================================================================
    RESET FORM
-   Token is intentionally NOT cleared — admin stays authenticated
-   for the whole session so the popup never fires again.
+   accessToken is intentionally kept — no re-auth needed next booking
    ================================================================ */
 function resetForm() {
   ['f-name','f-phone','f-email','f-area','f-notes','f-date'].forEach(function(id) {
@@ -476,7 +497,6 @@ function resetForm() {
     if (el) el.value = '';
   });
 
-  /* Reset time dropdown to default (no date picked yet) */
   var sel = document.getElementById('f-time');
   if (sel) {
     sel.innerHTML = '<option value="">Select a time...</option>';
@@ -489,7 +509,6 @@ function resetForm() {
 
   document.querySelectorAll('.pill').forEach(function(p) { p.classList.remove('selected'); });
   selectedType = '';
-
   document.querySelectorAll('.err-msg,.pills-err').forEach(function(el) { el.classList.remove('show'); });
   document.querySelectorAll('.err').forEach(function(el) { el.classList.remove('err'); });
 
