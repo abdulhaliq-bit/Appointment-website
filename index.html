@@ -5,14 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Book an Appointment</title>
   <link rel="stylesheet" href="style.css" />
-  <!-- Google Identity Services (loaded silently for OAuth) -->
   <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body>
 
   <div class="page">
 
-    <!-- Brand header -->
     <div class="brand">
       <div class="brand-icon">
         <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -26,10 +24,8 @@
       <p>Fill in your details and pick a time that works for you</p>
     </div>
 
-    <!-- Main card -->
     <div class="card">
 
-      <!-- Step progress indicator (hidden on step 4) -->
       <div id="steps-wrapper" class="steps-wrapper">
         <div class="steps-row">
           <div class="step-dot active" id="sd1">1</div>
@@ -45,7 +41,7 @@
         </div>
       </div>
 
-      <!-- ─── Step 1: Your details ─────────────────────────────── -->
+      <!-- Step 1: Your details -->
       <div id="step1">
         <div class="section-title">Your details</div>
         <p class="section-sub">Tell us a bit about you and your property.</p>
@@ -93,11 +89,11 @@
         </div>
 
         <div class="btn-row">
-          <button class="btn btn-primary" onclick="nextStep1()">Next step →</button>
+          <button class="btn btn-primary" onclick="nextStep1()">Next step &rarr;</button>
         </div>
       </div>
 
-      <!-- ─── Step 2: Date & time ────────────────────────────────── -->
+      <!-- Step 2: Date & time -->
       <div id="step2" style="display:none">
         <div class="section-title">Preferred date &amp; time</div>
         <p class="section-sub">Choose when you'd like us to visit.</p>
@@ -112,59 +108,64 @@
             <label for="f-time">Time slot</label>
             <select id="f-time">
               <option value="">Select a time...</option>
-              <option value="09:00">9:00 AM – 10:00 AM</option>
-              <option value="10:00">10:00 AM – 11:00 AM</option>
-              <option value="11:00">11:00 AM – 12:00 PM</option>
-              <option value="13:00">1:00 PM – 2:00 PM</option>
-              <option value="14:00">2:00 PM – 3:00 PM</option>
-              <option value="15:00">3:00 PM – 4:00 PM</option>
+              <option value="09:00">9:00 AM &ndash; 10:00 AM</option>
+              <option value="10:00">10:00 AM &ndash; 11:00 AM</option>
+              <option value="11:00">11:00 AM &ndash; 12:00 PM</option>
+              <option value="13:00">1:00 PM &ndash; 2:00 PM</option>
+              <option value="14:00">2:00 PM &ndash; 3:00 PM</option>
+              <option value="15:00">3:00 PM &ndash; 4:00 PM</option>
             </select>
             <div class="err-msg" id="e-time">Please select a time slot.</div>
           </div>
         </div>
 
         <div class="btn-row">
-          <button class="btn btn-secondary" onclick="goStep(1)">← Back</button>
-          <button class="btn btn-primary" onclick="nextStep2()">Review booking →</button>
+          <button class="btn btn-secondary" onclick="goStep(1)">&larr; Back</button>
+          <button class="btn btn-primary" onclick="nextStep2()">Review booking &rarr;</button>
         </div>
       </div>
 
-      <!-- ─── Step 3: Review & Confirm ──────────────────────────── -->
+      <!-- Step 3: Review & Confirm -->
       <div id="step3" style="display:none">
         <div class="section-title">Review your booking</div>
         <p class="section-sub">Make sure everything looks right before confirming.</p>
 
         <table class="review-table" id="review-table"></table>
 
-        <!-- Hidden GSI button — required by Google Identity Services, never shown to user -->
         <div id="gsi-btn" style="display:none;position:absolute;opacity:0;pointer-events:none;"></div>
 
         <div class="btn-row">
-          <button class="btn btn-secondary" onclick="goStep(2)">← Back</button>
+          <button class="btn btn-secondary" onclick="goStep(2)">&larr; Back</button>
           <button class="btn btn-primary" id="confirm-btn" onclick="handleConfirm()">Confirm booking</button>
-        </div>
-      </div>
-
-      <!-- ─── Step 4: Success ───────────────────────────────────── -->
-      <div id="step4" style="display:none">
-        <div class="success-panel">
-          <div class="success-circle">
-            <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-              <polyline points="20 6 9 17 4 12"/>
-            </svg>
-          </div>
-          <h2>Booking confirmed!</h2>
-          <p>Thank you. Your appointment request has been received. Our team will be in touch to confirm.</p>
-          <div class="ref-label">Booking reference</div>
-          <div class="ref-code" id="ref-code">BK-A3F2K1</div>
-          <button class="btn btn-primary btn-reset" onclick="resetForm()">Book another appointment</button>
         </div>
       </div>
 
     </div><!-- /card -->
   </div><!-- /page -->
 
-  <!-- Toast notification -->
+  <!-- Thank You Modal -->
+  <div id="thankyou-overlay" class="modal-overlay" style="display:none">
+    <div class="modal-box" role="dialog" aria-modal="true">
+
+      <div class="modal-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="20 6 9 17 4 12"/>
+        </svg>
+      </div>
+
+      <h2 class="modal-title">Thank You!</h2>
+      <p class="modal-msg">Your registration has been received successfully.<br/>Our team will be in touch shortly to confirm your appointment.</p>
+
+      <div class="modal-ref-label">Booking reference</div>
+      <div class="modal-ref-code" id="ref-code">BK-A3F2K1</div>
+
+      <div class="modal-summary" id="modal-summary"></div>
+
+      <button class="btn btn-primary modal-close-btn" onclick="closeModalAndReset()">Register another appointment</button>
+    </div>
+  </div>
+
+  <!-- Toast -->
   <div class="toast" id="toast"></div>
 
   <script src="app.js"></script>
