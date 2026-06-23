@@ -1,129 +1,72 @@
-# Appointment Booking App
+# Appointment Booking v3 — Setup Guide
 
-A clean, 3-step appointment booking form that silently adds confirmed bookings
-to a Google Calendar via OAuth 2.0. No Google branding is shown to the user.
+This version uses a Vercel serverless function + Service Account.
+NO Google popup ever. Works silently on every device.
 
----
-
-## Files
-
+## Project Structure
 ```
-appointment-booking/
-├── index.html   — markup, step panels, form fields
-├── style.css    — all styles (responsive, mobile-first)
-├── app.js       — form logic, validation, Google Calendar integration
-└── README.md    — this file
-```
-
----
-
-## Quick start (local preview)
-
-Open `index.html` directly in a browser **or** serve with any static server:
-
-```bash
-# Python
-python3 -m http.server 8080
-
-# Node (npx)
-npx serve .
+appointment-booking-v3/
+├── api/
+│   ├── book.js       ← handles booking + calendar insert
+│   └── slots.js      ← returns booked slots for a date
+├── public/
+│   ├── index.html
+│   ├── style.css
+│   └── app.js
+├── package.json
+├── vercel.json
+└── README.md
 ```
 
-Then visit `http://localhost:8080`.
+## Step 1 — Google Service Account
 
-> **Note:** Google OAuth will not work on `file://` or `http://localhost` unless
-> you add it as an Authorized JavaScript Origin in Google Cloud Console (see below).
+1. Go to https://console.cloud.google.com
+2. Your project → IAM & Admin → Service Accounts
+3. Click "+ Create Service Account"
+   - Name: appointment-booking
+   - Click Create and Continue → Done
+4. Click the service account → Keys tab → Add Key → JSON
+5. A .json file downloads — keep it safe, you need values from it
 
----
+## Step 2 — Share your calendar with the Service Account
 
-## Google Calendar setup
+1. Open Google Calendar
+2. Find your calendar → Settings and sharing
+3. Scroll to "Share with specific people"
+4. Click "+ Add people"
+5. Paste the service account email (looks like: name@project.iam.gserviceaccount.com)
+6. Permission: "Make changes to events"
+7. Click Send
 
-### 1. Create a Google Cloud project
+## Step 3 — Set up Firebase Firestore
 
-1. Go to https://console.cloud.google.com/
-2. Create a new project (or select an existing one)
-3. Enable the **Google Calendar API**:
-   - APIs & Services → Library → search "Google Calendar API" → Enable
+1. Go to https://console.firebase.google.com
+2. Add project → name it → Create
+3. Left sidebar → Firestore Database → Create database
+4. Start in test mode → Next → Done
+5. Project Settings → Service accounts tab
+6. Click "Generate new private key" — but actually you'll reuse
+   the same Google Service Account from Step 1.
+   Just note your Project ID from the General tab.
 
-### 2. Create OAuth 2.0 credentials
+## Step 4 — Deploy to Vercel
 
-1. APIs & Services → Credentials → **Create Credentials** → OAuth client ID
-2. Application type: **Web application**
-3. Add your domain to **Authorized JavaScript Origins**:
-   - e.g. `https://yourdomain.com`
-   - For local dev: `http://localhost:8080`
-4. Copy the **Client ID** — it looks like `123456789-abc.apps.googleusercontent.com`
+1. Push this folder to a GitHub repo
+2. Go to https://vercel.com → New Project → import your repo
+3. In Vercel project → Settings → Environment Variables, add:
 
-### 3. Get your Calendar ID
+   GOOGLE_SERVICE_ACCOUNT_EMAIL = client_email from your JSON file
+   GOOGLE_PRIVATE_KEY            = private_key from your JSON file (full value with \n)
+   CALENDAR_ID                   = your Google Calendar ID (e.g. yourname@gmail.com)
+   FIREBASE_PROJECT_ID           = your Firebase project ID
+   TIMEZONE                      = Asia/Colombo
 
-1. Open Google Calendar → find your target calendar in the left sidebar
-2. Click the three-dot menu → **Settings and sharing**
-3. Scroll to **Integrate calendar** → copy the **Calendar ID**
-   - Your primary calendar ID is your Gmail address
-   - Other calendars look like `abc123@group.calendar.google.com`
+4. Redeploy
 
-### 4. Update CONFIG in app.js
+## Environment Variable values — where to find them
 
-```js
-const CONFIG = {
-  CLIENT_ID:        'YOUR_CLIENT_ID.apps.googleusercontent.com',  // ← paste here
-  CALENDAR_ID:      'YOUR_CALENDAR_ID_HERE',                       // ← paste here
-  DURATION_MINUTES: 60,
-  TIMEZONE:         'Asia/Colombo',  // ← change to your timezone if needed
-};
-```
-
-Common timezones: `Europe/London`, `America/New_York`, `Asia/Dubai`, `Asia/Kolkata`
-
----
-
-## Deployment
-
-This is a static site — deploy anywhere:
-
-| Platform       | Command / method                          |
-|----------------|-------------------------------------------|
-| **Netlify**    | Drag & drop the folder at netlify.com/drop |
-| **Vercel**     | `npx vercel` in the project folder        |
-| **GitHub Pages** | Push to a repo, enable Pages in Settings |
-| **Any web host** | Upload all 3 files via FTP/cPanel        |
-
-After deploying, add your live URL to **Authorized JavaScript Origins** in Google
-Cloud Console (same place as step 2 above).
-
----
-
-## How the OAuth flow works
-
-1. User clicks **Confirm booking**
-2. If no token is in memory, `tokenClient.requestAccessToken()` opens a
-   Google sign-in popup (only the business owner's Google account should be used)
-3. On success, the token is stored **in memory only** — never in localStorage,
-   sessionStorage, or cookies
-4. `doAddToCalendar()` POSTs the event to the Calendar API with the bearer token
-5. On API success → Step 4 success screen is shown
-6. On any failure → a generic toast appears; no calendar details are exposed
-
----
-
-## Customisation
-
-| What                  | Where                              |
-|-----------------------|------------------------------------|
-| Timezone              | `CONFIG.TIMEZONE` in `app.js`      |
-| Appointment duration  | `CONFIG.DURATION_MINUTES`          |
-| Time slots            | `<select id="f-time">` in HTML     |
-| Brand colour          | `--teal` in `:root` in `style.css` |
-| Brand name / tagline  | `.brand` section in `index.html`   |
-| Property type options | `.pill` elements in `index.html`   |
-| Reminder timing       | `reminders.overrides` in `app.js`  |
-
----
-
-## Security notes
-
-- No passwords stored anywhere
-- OAuth 2.0 only — token is in-memory, cleared on page refresh
-- Serve over HTTPS in production (required for Google OAuth)
-- All required form fields are validated before any step transition
-- Error messages never expose calendar API details to end users
+Open the JSON file you downloaded in Step 1:
+- GOOGLE_SERVICE_ACCOUNT_EMAIL → "client_email" field
+- GOOGLE_PRIVATE_KEY           → "private_key" field (copy the ENTIRE value)
+- CALENDAR_ID                  → from Google Calendar settings
+- FIREBASE_PROJECT_ID          → from Firebase Console → Project Settings → General
