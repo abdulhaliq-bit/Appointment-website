@@ -5,9 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Book an Appointment</title>
   <link rel="stylesheet" href="style.css" />
-  <!-- Google Sign-in (for calendar only) -->
   <script src="https://accounts.google.com/gsi/client" async defer></script>
-  <!-- Firebase (for shared slot blocking across all devices) -->
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
 </head>
@@ -120,7 +118,6 @@
         <div class="section-title">Review your booking</div>
         <p class="section-sub">Make sure everything looks right before confirming.</p>
         <table class="review-table" id="review-table"></table>
-        <div id="gsi-btn" style="display:none;position:absolute;opacity:0;pointer-events:none;"></div>
         <div class="btn-row">
           <button class="btn btn-secondary" onclick="goStep(2)">&larr; Back</button>
           <button class="btn btn-primary" id="confirm-btn" onclick="handleConfirm()">Confirm booking</button>
