@@ -1,24 +1,4 @@
 /* ================================================================
-   Firebase config — fill these in from Firebase Console
-   Project Settings → General → Your apps → Config
-   ================================================================ */
-var FIREBASE_CONFIG = {
-  apiKey:     'AIzaSyA3iL6nq6gjnVfJPclxdmCONgdisZ1_fv4',
-  authDomain: 'appointment-booking-8a83b.firebaseapp.com',
-  projectId:  'appointment-booking-8a83b',
-};
-
-/* ================================================================
-   Google Calendar config — fill these in
-   ================================================================ */
-var CALENDAR_CONFIG = {
-  CLIENT_ID:        'YOUR_GOOGLE_CLIENT_ID.apps.googleuserconten235751329614-igv6su08k8v2je8fenccts0qc0184mgv.apps.googleusercontent.com',
-  CALENDAR_ID:      'qilahludba@gmail.com',
-  DURATION_MINUTES: 60,
-  TIMEZONE:         'Asia/Colombo',
-};
-
-/* ================================================================
    TIME SLOTS
    ================================================================ */
 var ALL_SLOTS = [
@@ -33,69 +13,13 @@ var ALL_SLOTS = [
 /* ================================================================
    STATE
    ================================================================ */
-var db           = null;
-var tokenClient  = null;
-var accessToken  = null;
-var pendingSubmit = false;
-var selectedType  = '';
-var toastTimer    = null;
-
-/* ================================================================
-   INIT FIREBASE
-   ================================================================ */
-function initFirebase() {
-  try {
-    if (!firebase.apps.length) {
-      firebase.initializeApp(FIREBASE_CONFIG);
-    }
-    db = firebase.firestore();
-    console.log('[Firebase] Ready');
-  } catch(e) {
-    console.error('[Firebase] Init failed:', e);
-  }
-}
-
-/* ================================================================
-   FIREBASE SLOT FUNCTIONS
-   ================================================================ */
-
-/* Get booked slots for a date — returns Promise<string[]> */
-function getBookedSlots(date) {
-  if (!db) return Promise.resolve([]);
-  return db.collection('booked_slots').doc(date).get()
-    .then(function(doc) {
-      return doc.exists ? (doc.data().slots || []) : [];
-    })
-    .catch(function() { return []; });
-}
-
-/*
-  Try to atomically claim a slot using Firestore transaction.
-  Returns Promise<true> if claimed, Promise<false> if already taken.
-*/
-function claimSlot(date, time) {
-  if (!db) return Promise.resolve(true); /* fallback if Firebase not ready */
-  var ref = db.collection('booked_slots').doc(date);
-  return db.runTransaction(function(tx) {
-    return tx.get(ref).then(function(doc) {
-      var slots = doc.exists ? (doc.data().slots || []) : [];
-      if (slots.indexOf(time) !== -1) {
-        /* Already booked — reject */
-        return Promise.reject({ alreadyBooked: true });
-      }
-      slots.push(time);
-      tx.set(ref, { slots: slots });
-      return true;
-    });
-  });
-}
+var selectedType = '';
+var toastTimer   = null;
 
 /* ================================================================
    DOM READY
    ================================================================ */
 document.addEventListener('DOMContentLoaded', function() {
-  initFirebase();
-
   var dateEl = document.getElementById('f-date');
   if (dateEl) {
     dateEl.min = new Date().toISOString().split('T')[0];
@@ -141,33 +65,36 @@ document.addEventListener('DOMContentLoaded', function() {
       if (ov && ov.style.display !== 'none') closeModalAndReset();
     }
   });
-
-  setTimeout(initGsi, 1500);
 });
 
 /* ================================================================
-   LOAD SLOTS FROM FIREBASE — shared across ALL devices
+   LOAD SLOTS FROM SERVER — works on every device, no login needed
    ================================================================ */
 function loadAndRenderSlots(date) {
   var select = document.getElementById('f-time');
   var notice = document.getElementById('date-full-notice');
   if (!select) return;
 
-  select.innerHTML = '<option value="">Checking availability...</option>';
+  select.innerHTML = '<option value="">Loading available times...</option>';
   select.disabled  = true;
   if (notice) notice.style.display = 'none';
 
-  getBookedSlots(date).then(function(booked) {
-    select.disabled = false;
-    renderTimeSlots(booked);
-  });
+  fetch('/api/slots?date=' + date)
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      select.disabled = false;
+      renderTimeSlots(data.slots || []);
+    })
+    .catch(function() {
+      select.disabled = false;
+      renderTimeSlots([]);
+    });
 }
 
 function renderTimeSlots(booked) {
   var select = document.getElementById('f-time');
   var notice = document.getElementById('date-full-notice');
   if (!select) return;
-  if (!booked) booked = [];
 
   select.innerHTML = '<option value="">Select a time...</option>';
   var available = 0;
@@ -191,33 +118,6 @@ function renderTimeSlots(booked) {
 }
 
 /* ================================================================
-   GOOGLE IDENTITY SERVICES
-   ================================================================ */
-function initGsi() {
-  if (typeof google === 'undefined' || !google.accounts || !google.accounts.oauth2) {
-    setTimeout(initGsi, 1500);
-    return;
-  }
-  tokenClient = google.accounts.oauth2.initTokenClient({
-    client_id: CALENDAR_CONFIG.CLIENT_ID,
-    scope: 'https://www.googleapis.com/auth/calendar.events',
-    callback: function(response) {
-      if (response.error || !response.access_token) {
-        pendingSubmit = false;
-        showToast('Sign-in was cancelled. Please try again.');
-        resetConfirmBtn();
-        return;
-      }
-      accessToken = response.access_token;
-      if (pendingSubmit) {
-        pendingSubmit = false;
-        doBooking();
-      }
-    },
-  });
-}
-
-/* ================================================================
    VALIDATION
    ================================================================ */
 function setFieldErr(inputId, errId, hasError) {
@@ -226,8 +126,11 @@ function setFieldErr(inputId, errId, hasError) {
   if (input) input.classList.toggle('err', hasError);
   if (msg)   msg.classList.toggle('show', hasError);
 }
-function clearFieldErr(i, e) { setFieldErr(i, e, false); }
+function clearFieldErr(inputId, errId) { setFieldErr(inputId, errId, false); }
 
+/* ================================================================
+   STEP 1
+   ================================================================ */
 function nextStep1() {
   var valid   = true;
   var name    = document.getElementById('f-name').value.trim();
@@ -248,6 +151,9 @@ function nextStep1() {
   if (valid) goStep(2);
 }
 
+/* ================================================================
+   STEP 2
+   ================================================================ */
 function nextStep2() {
   var valid = true;
   var date  = document.getElementById('f-date').value;
@@ -285,6 +191,9 @@ function updateStepDots(n) {
   });
 }
 
+/* ================================================================
+   REVIEW TABLE
+   ================================================================ */
 function buildReview() {
   var tv = document.getElementById('f-time').value;
   var sm = ALL_SLOTS.filter(function(s){ return s.value===tv; });
@@ -306,130 +215,45 @@ function buildReview() {
 }
 
 /* ================================================================
-   CONFIRM — first claim the slot in Firebase, then add to calendar
-   Using a transaction means two devices CAN'T book the same slot
+   CONFIRM — sends data to /api/book serverless function.
+   NO Google popup. NO OAuth. Works silently on every device.
    ================================================================ */
 function handleConfirm() {
   var btn = document.getElementById('confirm-btn');
   if (btn) { btn.textContent = 'Confirming...'; btn.classList.add('btn-loading'); }
 
-  if (accessToken) {
-    doBooking();
-  } else {
-    pendingSubmit = true;
-    if (tokenClient) {
-      tokenClient.requestAccessToken({ prompt: 'consent' });
-    } else {
-      setTimeout(function() {
-        if (tokenClient) {
-          tokenClient.requestAccessToken({ prompt: 'consent' });
-        } else {
-          pendingSubmit = false;
-          showToast('Google sign-in not ready. Please refresh.');
-          resetConfirmBtn();
-        }
-      }, 2000);
-    }
-  }
-}
+  var tv = document.getElementById('f-time').value;
+  var sm = ALL_SLOTS.filter(function(s){ return s.value===tv; });
+  var sl = sm.length ? sm[0].label : tv;
 
-function doBooking() {
-  var date = document.getElementById('f-date').value;
-  var time = document.getElementById('f-time').value;
-
-  /* Step 1: Atomically claim the slot in Firebase */
-  claimSlot(date, time)
-    .then(function() {
-      /* Slot claimed — now add to Google Calendar */
-      doAddToCalendar(date, time);
-    })
-    .catch(function(err) {
-      if (err && err.alreadyBooked) {
-        /* Someone else just booked this slot — refresh slots and warn user */
-        showToast('Sorry, this slot was just taken. Please choose another time.');
-        resetConfirmBtn();
-        loadAndRenderSlots(date);
-        goStep(2);
-      } else {
-        console.error('[Firestore] claimSlot error:', err);
-        /* Firebase failed — proceed anyway so booking still works */
-        doAddToCalendar(date, time);
-      }
-    });
-}
-
-/* ================================================================
-   GOOGLE CALENDAR — admin only, no attendees
-   ================================================================ */
-function doAddToCalendar(date, time) {
-  if (!accessToken) {
-    showToast('Authentication required. Please try again.');
-    resetConfirmBtn();
-    return;
-  }
-
-  var name  = document.getElementById('f-name').value.trim();
-  var phone = document.getElementById('f-phone').value.trim();
-  var email = document.getElementById('f-email').value.trim();
-  var area  = document.getElementById('f-area').value.trim();
-  var notes = document.getElementById('f-notes').value.trim() || '-';
-
-  var sm  = ALL_SLOTS.filter(function(s){ return s.value===time; });
-  var sl  = sm.length ? sm[0].label : time;
-  var tp  = time.split(':');
-  var sh  = parseInt(tp[0],10), smi = parseInt(tp[1],10);
-  var tot = sh*60 + smi + CALENDAR_CONFIG.DURATION_MINUTES;
-  var eh  = Math.floor(tot/60), em = tot%60;
-  var pad = function(x){ return x<10?'0'+x:''+x; };
-
-  var event = {
-    summary: 'Appointment - ' + name,
-    description:
-      'Name: '      + name         + '\n' +
-      'Phone: '     + phone        + '\n' +
-      'Email: '     + email        + '\n' +
-      'Property: '  + selectedType + '\n' +
-      'Area: '      + area         + '\n' +
-      'Time slot: ' + sl           + '\n' +
-      'Notes: '     + notes,
-    start: { dateTime: date+'T'+pad(sh)+':'+pad(smi)+':00', timeZone: CALENDAR_CONFIG.TIMEZONE },
-    end:   { dateTime: date+'T'+pad(eh)+':'+pad(em)+':00',  timeZone: CALENDAR_CONFIG.TIMEZONE },
-    reminders: {
-      useDefault: false,
-      overrides: [
-        { method: 'email', minutes: 1440 },
-        { method: 'popup', minutes: 30   },
-      ],
-    },
+  var payload = {
+    name:         document.getElementById('f-name').value.trim(),
+    phone:        document.getElementById('f-phone').value.trim(),
+    email:        document.getElementById('f-email').value.trim(),
+    propertyType: selectedType,
+    area:         document.getElementById('f-area').value.trim(),
+    notes:        document.getElementById('f-notes').value.trim(),
+    date:         document.getElementById('f-date').value,
+    time:         tv,
+    slotLabel:    sl,
   };
 
-  fetch(
-    'https://www.googleapis.com/calendar/v3/calendars/' +
-    encodeURIComponent(CALENDAR_CONFIG.CALENDAR_ID) + '/events',
-    {
-      method: 'POST',
-      headers: {
-        'Content-Type':  'application/json',
-        'Authorization': 'Bearer ' + accessToken,
-      },
-      body: JSON.stringify(event),
-    }
-  )
-  .then(function(r) {
-    if (r.status === 200 || r.status === 201) {
+  fetch('/api/book', {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify(payload),
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    if (data.success) {
       showThankYouModal();
-    } else if (r.status === 401) {
-      accessToken = null;
-      showToast('Session expired. Please click Confirm again.');
-      resetConfirmBtn();
     } else {
-      r.text().then(function(t){ console.error('[Calendar]', r.status, t); });
-      showToast('Something went wrong. Please try again.');
+      showToast(data.error || 'Something went wrong. Please try again.');
       resetConfirmBtn();
     }
   })
   .catch(function(err) {
-    console.error('[Calendar] Error:', err);
+    console.error('[book]', err);
     showToast('Something went wrong. Please try again.');
     resetConfirmBtn();
   });
@@ -497,7 +321,6 @@ function resetForm() {
   document.querySelectorAll('.err').forEach(function(el) { el.classList.remove('err'); });
   var notice = document.getElementById('date-full-notice');
   if (notice) notice.style.display = 'none';
-  pendingSubmit = false;
   goStep(1);
 }
 
