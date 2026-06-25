@@ -3,17 +3,17 @@
    Project Settings → General → Your apps → Config
    ================================================================ */
 var FIREBASE_CONFIG = {
-  apiKey:     'YOUR_FIREBASE_API_KEY',
-  authDomain: 'YOUR_PROJECT_ID.firebaseapp.com',
-  projectId:  'YOUR_PROJECT_ID',
+  apiKey:     'AIzaSyA3iL6nq6gjnVfJPclxdmCONgdisZ1_fv4',
+  authDomain: 'appointment-booking-8a83b.firebaseapp.com',
+  projectId:  'appointment-booking-8a83b',
 };
 
 /* ================================================================
    Google Calendar config — fill these in
    ================================================================ */
 var CALENDAR_CONFIG = {
-  CLIENT_ID:        'YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com',
-  CALENDAR_ID:      'YOUR_CALENDAR_ID_HERE',
+  CLIENT_ID:        '235751329614-igv6su08k8v2je8fenccts0qc0184mgv.apps.googleusercontent.com',
+  CALENDAR_ID:      'qilahludba@gmail.com',
   DURATION_MINUTES: 60,
   TIMEZONE:         'Asia/Colombo',
 };
