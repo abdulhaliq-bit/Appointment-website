@@ -12,7 +12,7 @@ var FIREBASE_CONFIG = {
    Google Calendar config — fill these in
    ================================================================ */
 var CALENDAR_CONFIG = {
-  CLIENT_ID:        'YOUR_GOOGLE_CLIENT_ID.apps.googleuserconten235751329614-igv6su08k8v2je8fenccts0qc0184mgv.apps.googleusercontent.com',
+  CLIENT_ID:        '235751329614-igv6su08k8v2je8fenccts0qc0184mgv.apps.googleusercontent.com',
   CALENDAR_ID:      'qilahludba@gmail.com',
   DURATION_MINUTES: 60,
   TIMEZONE:         'Asia/Colombo',
@@ -199,7 +199,7 @@ function initGsi() {
     return;
   }
   tokenClient = google.accounts.oauth2.initTokenClient({
-    client_id: CALENDAR_CONFIG.CLIENT_ID,
+    client_id: CALENDAR_CONFIG.235751329614-igv6su08k8v2je8fenccts0qc0184mgv.apps.googleusercontent.com,
     scope: 'https://www.googleapis.com/auth/calendar.events',
     callback: function(response) {
       if (response.error || !response.access_token) {
